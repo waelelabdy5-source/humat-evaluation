@@ -18,7 +18,7 @@ body{margin:0;font:400 16px/1.7 "IBM Plex Sans Arabic",Tahoma,sans-serif;backgro
 .who{font-size:.85rem;color:#ffffffcc}
 main{flex:1;padding:24px 16px 40px}
 footer{text-align:center;color:var(--mut);font-size:.85rem;padding:16px;border-top:1px solid var(--line)}
-.wrap{max-width:920px;margin:auto;display:grid;gap:16px}.wide{max-width:1300px}
+.wrap{max-width:920px;margin:auto;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.wide{max-width:1300px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px}
 .card h3{margin:0;font-size:1.05rem}
 button,input,textarea{font:inherit;color:inherit}
@@ -70,6 +70,8 @@ input::-webkit-inner-spin-button{appearance:none}
 .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:20px;padding:3px 6px 3px 14px;background:var(--bg)}
 .chip button{padding:2px 6px}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--tx);max-width:540px;width:92%}
+dialog:not([open]){display:none}dialog[open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:92vh;overflow:auto;z-index:60}
+@media(max-width:720px){td.nm{min-width:130px}}
 dialog textarea{height:150px;direction:ltr;font:.85rem monospace}
 #toast{position:fixed;bottom:18px;inset-inline:0;margin:auto;width:max-content;max-width:90%;background:var(--ink);color:#fff;padding:9px 18px;border-radius:8px;border-bottom:3px solid var(--gold);z-index:50}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -104,7 +106,8 @@ body[data-pg=home] main{padding:0}
 <h3 style="margin-top:0">بيانات الدخول</h3>
 <p class="mut">كل سطر: الاسم، رقم التسجيل، كلمة المرور. انسخها الآن وأرسلها لكل أمين، فكلمة المرور لا تظهر مرة أخرى (يمكنك توليد كلمة جديدة بزر 🔑).</p>
 <textarea id="dc" readonly></textarea>
-<p class="tools"><button id="cp" onclick="copyCreds(this)">نسخ</button><button class="g" onclick="$('#dlg').close()">إغلاق</button></p>
+<p id="ds" class="mut" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+<p class="tools"><button id="cp" onclick="copyCreds(this)">نسخ</button><button class="g" onclick="closeD()">إغلاق</button></p>
 </dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
@@ -153,7 +156,7 @@ const cur=()=>S?S.t:LT;
 function use(t){TK=t;DB=ALL[t];CRIT=TRK[t].crit;MAXT=CRIT.reduce((a,c)=>a+c[1],0)}
 function load(d){const o=d&&d.m?d:{m:d||{},c:{}};ALL={m:{members:[],admins:[],...o.m},c:{members:[],admins:null,...o.c}};use(cur())}
 function migrate(){let c=false;for(const t of['m','c']){const cr=TRK[t].crit;ALL[t].members.forEach(m=>{while(m.s.length<cr.length){m.s.push(null);c=true}m.s=m.s.map((v,i)=>v==null||!cr[i]?v:Math.min(v,cr[i][1]))})}return c}
-async function save(){const j=JSON.stringify(ALL);try{if(db)await db.set({json:j});else localStorage.setItem('ha_db',j)}catch(e){toast('تعذر الحفظ: '+e.message)}}
+async function save(){const j=JSON.stringify(ALL);try{if(db)await db.set({json:j});else localStorage.setItem('ha_db',j);return true}catch(e){toast('تعذر الحفظ: '+e.message);return false}}
 
 async function init(){
  $('#hl').src=LOGO;
@@ -168,12 +171,12 @@ async function init(){
   }catch(e){db=null;toast('تعذر الاتصال بـ Firebase، سيُستخدم التخزين المحلي')}
  }
  if(!db)try{load(JSON.parse(localStorage.getItem('ha_db')))}catch(e){}
- if(migrate())await save();
+ if(migrate())save();
  DEFH=await H('admin123');
  let ch=false;
  if(!ALL.m.admins.length){ALL.m.admins=[{u:'admin',p:DEFH}];ch=true}
  if(!ALL.c.admins||!ALL.c.admins.length){ALL.c.admins=JSON.parse(JSON.stringify(ALL.m.admins));ch=true}
- if(ch)await save();
+ if(ch)save();
  render();
 }
 
@@ -241,21 +244,23 @@ async function copyCreds(b){
  if(!ok){ta.focus();ta.select()}
  b.textContent=ok?'تم النسخ ✓':'تعذّر النسخ تلقائياً: النص محدد، اضغط Ctrl+C'
 }
-function creds(a){$('#dc').value=a.map(x=>x.join('\t')).join('\n');$('#cp').textContent='نسخ';$('#dlg').showModal()}
+function creds(a,p){$('#dc').value=a.map(x=>x.join('\t')).join('\n');$('#cp').textContent='نسخ';const st=$('#ds');st.dataset.d='';st.textContent=p?'جارٍ حفظ البيانات على الخادم... لا تغلق الصفحة حتى تظهر عبارة «تم الحفظ ✓».':'';clearTimeout(creds.k);if(p)creds.k=setTimeout(()=>{if(!st.dataset.d)st.textContent='الحفظ بطيء، تأكد من اتصال الإنترنت وانتظر قبل إغلاق النافذة.'},12000);const d=$('#dlg');try{d.showModal()}catch(e){d.setAttribute('open','')}}
+function dst(ok){clearTimeout(creds.k);const st=$('#ds');st.dataset.d='1';st.textContent=ok?'تم الحفظ ✓':'تعذّر حفظ البيانات على الخادم. تأكد من اتصال الإنترنت وكرّر العملية قبل إرسال البيانات.'}
+function closeD(){const d=$('#dlg');d.close?d.close():d.removeAttribute('open')}
 async function addM(){
  const ns=$('#nn').value.split('\n').map(x=>x.trim()).filter(Boolean);
  if(!ns.length)return toast('اكتب اسمًا واحدًا على الأقل');
  const out=[];
  for(const n of ns){const p=pw(),id=newId();DB.members.push({id,n,p:await H(p),s:Array(CRIT.length).fill(null),note:''});out.push([n,id,p])}
- await save();render();creds(out);
+ render();creds(out,1);dst(await save());
 }
-async function rp(id){const m=fm(id),p=pw();m.p=await H(p);await save();creds([[m.n,id,p]])}
-async function del(id){const m=fm(id);if(confirm('حذف '+m.n+' نهائيًا؟')){DB.members=DB.members.filter(x=>x!==m);await save();render()}}
+async function rp(id){const m=fm(id),p=pw();m.p=await H(p);creds([[m.n,id,p]],1);dst(await save())}
+async function del(id){const m=fm(id);if(confirm('حذف '+m.n+' نهائيًا؟')){DB.members=DB.members.filter(x=>x!==m);render();await save()}}
 async function delA(u){
  if(DB.admins.length<2)return toast('لا يمكن حذف آخر مسؤول');
  if(u===S.id)return toast('لا يمكنك حذف الحساب الذي تستخدمه الآن');
  if(!confirm('حذف المسؤول «'+u+'» نهائياً؟'))return;
- DB.admins=DB.admins.filter(a=>a.u!==u);await save();render();toast('تم حذف المسؤول');
+ DB.admins=DB.admins.filter(a=>a.u!==u);render();toast('تم حذف المسؤول');await save();
 }
 async function addA(){
  const u=$('#au').value.trim(),p=$('#ap').value;
